@@ -123,6 +123,18 @@
   dl.legend dt { font-family: var(--font-display); font-weight: 700; color: var(--accent); }
   dl.legend dd { margin: 0; color: var(--muted); min-width: 0; }
 
+  .phrases { display: flex; flex-direction: column; gap: 12px; }
+  .phrases h2 { font-size: 1.25rem; }
+  .tabs { display: flex; flex-wrap: wrap; gap: 8px; }
+  .tabs button { min-height: 36px; font-size: 0.9rem; border-radius: 999px; padding-inline: 12px; }
+  .tabs button[aria-pressed="true"] { background: var(--accent); color: var(--accent-fg); border-color: var(--accent); }
+  ul.phlist { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+  .phrow { width: 100%; text-align: left; background: var(--surface); color: var(--fg); border: 1px solid var(--line); border-radius: 12px; padding: 10px 14px; min-height: 0; display: flex; flex-direction: column; gap: 2px; }
+  .phrow:hover { border-color: var(--accent); }
+  .phrow .es { font-size: 0.88rem; color: var(--muted); }
+  .phrow .en { font-family: var(--font-display); font-weight: 700; font-size: 1.1rem; overflow-wrap: anywhere; }
+  .phrow .pr { font-family: var(--font-display); font-size: 1.05rem; overflow-wrap: anywhere; }
+
   .hist h2 { font-size: 1rem; margin-bottom: 8px; }
   .hist-row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
   .hist-row button { min-height: 36px; font-size: 0.9rem; border-radius: 999px; padding-inline: 12px; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -158,6 +170,12 @@
   <p id="status" role="status"></p>
 
   <section id="out" class="panel result" aria-live="polite"></section>
+
+  <section class="phrases" aria-labelledby="ph-title">
+    <h2 id="ph-title">Frases más usadas</h2>
+    <div class="tabs" id="ph-tabs" role="group" aria-label="Categorías"></div>
+    <ul class="phlist" id="ph-list"></ul>
+  </section>
 
   <details class="guide">
     <summary>Cómo leer la pronunciación</summary>
@@ -240,6 +258,107 @@
 
   var EXAMPLES = ["¿Dónde está el baño?", "Tengo hambre", "Mucho gusto", "¿Cuánto cuesta?", "Necesito ayuda", "Quiero un café con leche y un pan"];
 
+  // ---------- Frases más usadas ----------
+  // Cada frase: [español, inglés, pronunciación]. El inglés y la pronunciación tienen el mismo número de palabras.
+  var COMMON = [
+    ["Saludos", [
+      ["Hola", "Hello", "je-LOU"],
+      ["Buenos días", "Good morning", "gud MOR-ning"],
+      ["Buenas tardes", "Good afternoon", "gud af-ter-NUN"],
+      ["Buenas noches", "Good night", "gud nait"],
+      ["¿Cómo estás?", "How are you?", "jau ar iu"],
+      ["Estoy bien, gracias", "I'm fine, thanks", "aim fain zenks"],
+      ["Mucho gusto", "Nice to meet you", "nais tu mit iu"],
+      ["¿Cómo te llamas?", "What is your name?", "juat is iur neim"],
+      ["Me llamo", "My name is", "mai neim is"],
+      ["¿De dónde eres?", "Where are you from?", "juer ar iu from"],
+      ["Soy de Colombia", "I'm from Colombia", "aim from co-LAM-bia"],
+      ["Hasta luego", "See you later", "si iu LEI-ter"],
+      ["Hasta mañana", "See you tomorrow", "si iu tu-MO-rou"],
+      ["Que tengas un buen día", "Have a nice day", "jav a nais dei"]
+    ]],
+    ["Cortesía", [
+      ["Por favor", "Please", "plis"],
+      ["Gracias", "Thank you", "zenk iu"],
+      ["Muchas gracias", "Thank you very much", "zenk iu VE-ri mach"],
+      ["De nada", "You're welcome", "iur UEL-kam"],
+      ["Perdón", "Excuse me", "eks-KIUS mi"],
+      ["Lo siento", "I'm sorry", "aim SO-ri"],
+      ["No hay problema", "No problem", "nou PRO-blem"],
+      ["Claro que sí", "Of course", "ov kors"],
+      ["Sí", "Yes", "yes"],
+      ["No", "No", "nou"],
+      ["No sé", "I don't know", "ai dount nou"],
+      ["Tal vez", "Maybe", "MEI-bi"],
+      ["Estoy de acuerdo", "I agree", "ai a-GRI"],
+      ["Está bien", "It's okay", "its o-KEI"]
+    ]],
+    ["Para entenderse", [
+      ["No entiendo", "I don't understand", "ai dount an-der-STAND"],
+      ["¿Hablas español?", "Do you speak Spanish?", "du iu spik SPA-nish"],
+      ["Hablo poco inglés", "I speak a little English", "ai spik a LI-tol ING-lish"],
+      ["¿Puedes hablar más despacio?", "Can you speak slowly?", "kan iu spik SLOU-li"],
+      ["¿Puedes repetirlo?", "Can you repeat that?", "kan iu ri-PIT dat"],
+      ["¿Cómo se dice esto en inglés?", "How do you say this in English?", "jau du iu sei dis in ING-lish"],
+      ["¿Qué significa esto?", "What does this mean?", "juat das dis min"],
+      ["Estoy aprendiendo inglés", "I'm learning English", "aim LER-ning ING-lish"],
+      ["¿Puedes ayudarme?", "Can you help me?", "kan iu jelp mi"]
+    ]],
+    ["Viajes", [
+      ["¿Dónde está el baño?", "Where is the bathroom?", "juer is de BAZ-rum"],
+      ["¿Dónde está la estación de tren?", "Where is the train station?", "juer is de trein STEI-shon"],
+      ["¿Cómo llego al aeropuerto?", "How do I get to the airport?", "jau du ai guet tu de ER-port"],
+      ["¿Está lejos de aquí?", "Is it far from here?", "is it far from jir"],
+      ["Gire a la izquierda", "Turn left", "tern left"],
+      ["Gire a la derecha", "Turn right", "tern rait"],
+      ["Siga derecho", "Go straight", "gou streit"],
+      ["Estoy perdido", "I'm lost", "aim lost"],
+      ["Un boleto, por favor", "One ticket, please", "uan TI-ket plis"],
+      ["Tengo una reserva", "I have a reservation", "ai jav a re-ser-VEI-shon"],
+      ["¿Cuál es la contraseña del wifi?", "What's the wifi password?", "juats de UAI-fai PAS-uerd"],
+      ["¿Dónde puedo encontrar un taxi?", "Where can I find a taxi?", "juer kan ai faind a TAK-si"],
+      ["¿Cuánto tarda?", "How long does it take?", "jau long das it teik"]
+    ]],
+    ["Restaurante", [
+      ["Una mesa para dos, por favor", "A table for two, please", "a TEI-bol for tu plis"],
+      ["¿Puedo ver el menú?", "Can I see the menu?", "kan ai si de ME-niu"],
+      ["¿Qué me recomienda?", "What do you recommend?", "juat du iu re-ko-MEND"],
+      ["Quisiera agua, por favor", "I would like water, please", "ai uud laik UO-ter plis"],
+      ["Soy vegetariano", "I'm vegetarian", "aim ve-yi-TE-ri-an"],
+      ["Soy alérgico a las nueces", "I'm allergic to nuts", "aim a-LER-yik tu nats"],
+      ["¿Esto es picante?", "Is this spicy?", "is dis SPAI-si"],
+      ["Está delicioso", "This is delicious", "dis is di-LI-shes"],
+      ["Más agua, por favor", "More water, please", "mor UO-ter plis"],
+      ["La cuenta, por favor", "The check, please", "de chek plis"],
+      ["¿Podemos pagar por separado?", "Can we pay separately?", "kan ui pei SE-pa-rit-li"]
+    ]],
+    ["Compras", [
+      ["¿Cuánto cuesta esto?", "How much is this?", "jau mach is dis"],
+      ["Solo estoy mirando", "I'm just looking", "aim yast LU-king"],
+      ["¿Tiene una talla más pequeña?", "Do you have a smaller size?", "du iu jav a SMO-ler saiz"],
+      ["¿Puedo probármelo?", "Can I try this on?", "kan ai trai dis on"],
+      ["Es muy caro", "It's too expensive", "its tu eks-PEN-siv"],
+      ["¿Puedo pagar con tarjeta?", "Can I pay by card?", "kan ai pei bai kard"],
+      ["¿Aceptan efectivo?", "Do you accept cash?", "du iu ak-SEPT kash"],
+      ["Me lo llevo", "I'll take it", "ail teik it"]
+    ]],
+    ["Emergencias", [
+      ["¡Ayuda!", "Help!", "jelp"],
+      ["Llame a la policía", "Call the police", "kol de po-LIS"],
+      ["Llame a una ambulancia", "Call an ambulance", "kol an AM-biu-lans"],
+      ["Necesito un médico", "I need a doctor", "ai nid a DOK-ter"],
+      ["Es una emergencia", "It's an emergency", "its an i-MER-yen-si"],
+      ["Me siento mal", "I feel sick", "ai fil sik"],
+      ["Me duele aquí", "It hurts here", "it jerts jir"],
+      ["¿Dónde está la farmacia?", "Where is the pharmacy?", "juer is de FAR-ma-si"],
+      ["Perdí mi pasaporte", "I lost my passport", "ai lost mai PAS-port"]
+    ]]
+  ];
+  function pairUp(en, pr) {
+    var e = en.split(" "), p = pr.split(" ");
+    return e.map(function (w, i) { return [w, p[i] || "?"]; });
+  }
+
   // ---------- Utilidades ----------
   function $(id) { return document.getElementById(id); }
   function el(tag, cls, text) {
@@ -255,6 +374,9 @@
 
   var PHRASE_MAP = {};
   PHRASES.forEach(function (p) { p[0].forEach(function (k) { PHRASE_MAP[norm(k)] = p[1]; }); });
+  COMMON.forEach(function (cat) {
+    cat[1].forEach(function (f) { PHRASE_MAP[norm(f[0])] = pairUp(f[1], f[2]); });
+  });
 
   function toResult(pairs) {
     return {
@@ -522,6 +644,38 @@
     b.addEventListener("click", function () { $("src").value = t; translate(t); });
     exBox.appendChild(b);
   });
+  var phTabs = $("ph-tabs"), phList = $("ph-list"), phCat = 0;
+  function drawPhrases() {
+    phTabs.textContent = "";
+    COMMON.forEach(function (cat, i) {
+      var tb = el("button", "ghost", cat[0]); tb.type = "button";
+      tb.setAttribute("aria-pressed", i === phCat ? "true" : "false");
+      tb.addEventListener("click", function () { phCat = i; drawPhrases(); });
+      phTabs.appendChild(tb);
+    });
+    phList.textContent = "";
+    COMMON[phCat][1].forEach(function (f) {
+      var li = el("li");
+      var b = el("button", "phrow"); b.type = "button";
+      b.appendChild(el("span", "es", f[0]));
+      var en = el("span", "en", f[1]); en.lang = "en";
+      b.appendChild(en);
+      var pr = el("span", "pr");
+      pairUp(f[1], f[2]).forEach(function (w, i) {
+        if (i) pr.appendChild(document.createTextNode(" "));
+        pr.appendChild(pronNode(w[1]));
+      });
+      b.appendChild(pr);
+      b.addEventListener("click", function () {
+        $("src").value = f[0];
+        translate(f[0]);
+        try { $("out").scrollIntoView({ block: "start" }); } catch (e) { /* sin scroll */ }
+      });
+      li.appendChild(b);
+      phList.appendChild(li);
+    });
+  }
+  drawPhrases();
   $("go").addEventListener("click", function () { translate($("src").value); });
   $("src").addEventListener("keydown", function (e) {
     if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) { e.preventDefault(); translate($("src").value); }
