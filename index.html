@@ -89,6 +89,13 @@
   #status { color: var(--muted); font-size: 0.9rem; min-height: 0; }
   #status:empty { display: none; }
 
+  .claude-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; font-size: 0.9rem; color: var(--muted); }
+  .claude-bar .dot { width: 10px; height: 10px; border-radius: 50%; background: var(--muted); flex: none; }
+  .claude-bar[data-state="granted"] .dot { background: var(--accent); }
+  .claude-bar[data-state="prompt"] .dot, .claude-bar[data-state="denied"] .dot { background: var(--stress); }
+  .claude-bar span:not(.dot) { min-width: 0; flex: 1 1 14rem; }
+  .claude-bar button { min-height: 36px; font-size: 0.9rem; border-radius: 999px; padding-inline: 12px; }
+
   .result { display: flex; flex-direction: column; gap: 16px; }
   .badge { align-self: flex-start; font-size: 0.78rem; color: var(--muted); border: 1px solid var(--line); border-radius: 999px; padding: 2px 10px; }
   .english { font-family: var(--font-display); font-weight: 700; font-size: clamp(1.7rem, 6.5vw, 2.3rem); line-height: 1.15; letter-spacing: -0.01em; overflow-wrap: anywhere; }
@@ -139,6 +146,11 @@
     <div class="row">
       <button id="go" class="primary" type="button">Traducir</button>
       <span class="hint">o Ctrl + Enter</span>
+    </div>
+    <div class="claude-bar" id="claude-bar" data-state="unavailable">
+      <span class="dot" aria-hidden="true"></span>
+      <span id="claude-msg">Comprobando la traducción libre con Claude…</span>
+      <button id="claude-btn" class="ghost" type="button" hidden></button>
     </div>
     <div class="examples" id="examples" aria-label="Frases de ejemplo"></div>
   </section>
@@ -302,16 +314,23 @@
 
   async function viaClaude(text) {
     var sample = await getSample();
-    if (!sample) return { ok: false, msg: "La traducción completa no está disponible aquí. Usé el diccionario básico, palabra por palabra." };
+    if (!sample) return { ok: false, code: "no_sample", msg: "Esta vista no permite traducir con Claude. Usé el diccionario básico, palabra por palabra." };
     try {
       var r = await sample.json(buildPrompt(text), { modelTier: "quick" });
       if (valid(r)) return { ok: true, data: { english: r.english, words: r.words, note: typeof r.note === "string" ? r.note : "" } };
-      return { ok: false, msg: "No pude leer la respuesta de Claude. Usé el diccionario básico, palabra por palabra." };
+      return { ok: false, code: "bad_shape", msg: "La respuesta de Claude vino incompleta. Toca Traducir otra vez. Mientras tanto, palabra por palabra." };
     } catch (err) {
-      var code = err && err.code;
-      if (code === "not_granted") return { ok: false, msg: "Sin permiso para consultar a Claude, así que traduje palabra por palabra." };
-      if (code === "rate_limited") return { ok: false, msg: "Demasiadas consultas seguidas. Espera un momento. Mientras tanto, traducción palabra por palabra." };
-      return { ok: false, msg: "No pude consultar a Claude ahora. Usé el diccionario básico, palabra por palabra." };
+      var code = (err && err.code) || "upstream_error";
+      var msgs = {
+        not_granted: "No diste permiso para usar Claude en esta página, así que traduje palabra por palabra.",
+        sampling_disabled: "Claude no está disponible para tu cuenta, así que traduje palabra por palabra.",
+        rate_limited: "Llegaste al límite de consultas por ahora. Prueba en unos minutos. Mientras tanto, palabra por palabra.",
+        session_expired: "Tu sesión de Claude venció. Inicia sesión de nuevo y toca Traducir.",
+        invalid_json: "Claude respondió en un formato que no pude leer. Toca Traducir otra vez.",
+        empty_completion: "Claude no devolvió texto. Toca Traducir otra vez.",
+        refused: "Claude no pudo traducir ese texto. Prueba con otra frase."
+      };
+      return { ok: false, code: code, msg: msgs[code] || ("No pude consultar a Claude (" + code + "). Toca Traducir otra vez.") };
     }
   }
 
@@ -451,12 +470,49 @@
     var res = lookup(text), source = "phrasebook";
     if (!res) {
       var r = await viaClaude(text);
-      if (r.ok) { res = r.data; source = "claude"; }
-      else { res = offline(text); source = "offline"; setStatus(r.msg); }
+      if (r.ok) { res = r.data; source = "claude"; refreshBar(); }
+      else { res = offline(text); source = "offline"; setStatus(r.msg); refreshBar(r.code); }
     }
     render(res, source);
     saveHist(text);
     busy(false);
+  }
+
+  // ---------- Estado de Claude ----------
+  var perms = null;
+  function setBar(state, msg, btnText, onClick) {
+    var b = $("claude-btn");
+    $("claude-bar").setAttribute("data-state", state);
+    $("claude-msg").textContent = msg;
+    b.hidden = !btnText;
+    b.textContent = btnText || "";
+    b.onclick = onClick || null;
+  }
+  async function askPerm() {
+    try { if (perms) await perms.request(["sample"]); } catch (e) { /* sin respuesta */ }
+    refreshBar();
+  }
+  async function openPerms() {
+    try { if (perms) await perms.manage(); }
+    catch (e) { setStatus("Abre el menú de permisos de este artefacto y activa Claude."); }
+    refreshBar();
+  }
+  async function refreshBar(failCode) {
+    var sample = await getSample();
+    if (!sample) {
+      setBar("unavailable", "Traducción libre con Claude: no disponible en esta vista. Solo funcionan las frases comunes y el diccionario básico.");
+      return;
+    }
+    var st = "prompt";
+    try {
+      if (!perms && window.claude && window.claude.use) perms = await window.claude.use("permissions");
+      if (perms) st = await perms.state("sample");
+    } catch (e) { st = "prompt"; }
+    if (failCode === "not_granted") st = "denied";
+    if (st === "granted") setBar("granted", "Traducción libre con Claude: activa. Escribe cualquier frase.");
+    else if (st === "denied") setBar("denied", "Traducción libre con Claude: sin permiso. Sin él solo funcionan las frases comunes y el diccionario básico.", "Abrir permisos", openPerms);
+    else if (st === "unavailable") setBar("unavailable", "Traducción libre con Claude: no disponible aquí. Solo funcionan las frases comunes y el diccionario básico.");
+    else setBar("prompt", "Para traducir cualquier frase, permite que esta página use Claude.", "Permitir Claude", askPerm);
   }
 
   // ---------- Inicio ----------
@@ -471,6 +527,7 @@
     if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) { e.preventDefault(); translate($("src").value); }
   });
   drawHist(loadHist());
+  refreshBar();
   render(lookup($("src").value) || offline($("src").value), "phrasebook");
 })();
 </script>
